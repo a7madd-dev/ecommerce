@@ -1,3 +1,17 @@
+# ============================================================================
+# Self-contained local/production stack: Next.js app + PostgreSQL.
+#
+# This project was migrated off Supabase — it now runs against a plain Postgres
+# database. The schema + seed data load automatically on first boot from the
+# SQL files mounted into the postgres init directory (they run in filename
+# order: 00 auth-stub → 01/02 schema → 99 admin user).
+#
+#   cp .env.example .env   # then edit AUTH_SECRET / passwords
+#   docker compose up -d --build
+#
+# App:  http://localhost:3000   (login: admin@a7madd.com / admin123)
+# ============================================================================
+
 services:
   app:
     build:
@@ -6,10 +20,46 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
-      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
-      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - NODE_ENV=production
+      - PORT=3000
+      - HOSTNAME=0.0.0.0
+      - NEXT_TELEMETRY_DISABLED=1
+      - DATABASE_URL=${DATABASE_URL:-postgresql://ecommerce:ecommerce@postgres:5432/ecommerce}
       - AUTH_SECRET=${AUTH_SECRET}
-      - AUTH_URL=${AUTH_URL}
-      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
+      - AUTH_URL=${AUTH_URL:-http://localhost:3000}
+      - AUTH_TRUST_HOST=true
+      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-ecommerce}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-ecommerce}
+      - POSTGRES_DB=${POSTGRES_DB:-ecommerce}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Schema + seed, loaded on first init in filename order.
+      - ./db/00_auth_stub.sql:/docker-entrypoint-initdb.d/00_auth_stub.sql:ro
+      - ./supabase/migrations/001_initial_schema.sql:/docker-entrypoint-initdb.d/01_initial_schema.sql:ro
+      - ./supabase/migrations/002_extended_schema.sql:/docker-entrypoint-initdb.d/02_extended_schema.sql:ro
+      - ./db/99_seed_admin.sql:/docker-entrypoint-initdb.d/99_seed_admin.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ecommerce} -d ${POSTGRES_DB:-ecommerce}"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

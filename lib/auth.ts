@@ -2,9 +2,15 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { getServiceClient } from "./supabase";
+import { authConfig } from "./auth.config";
 import type { UserRole } from "@/types";
 
+// Node-side NextAuth instance: spreads the edge-safe config (jwt/session
+// callbacks + pages) and adds the DB-backed Credentials provider. This provider
+// uses `pg` + `bcryptjs`, so this module must never be imported from the
+// middleware / Edge runtime — middleware uses `lib/auth.config.ts` directly.
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  ...authConfig,
   providers: [
     Credentials({
       credentials: {
@@ -40,25 +46,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
     }),
   ],
-  callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        token.role = (user as { role: UserRole }).role;
-        token.id = user.id!;
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      if (session.user) {
-        session.user.role = token.role as UserRole;
-        session.user.id = token.id as string;
-      }
-      return session;
-    },
-  },
-  pages: {
-    signIn: "/login",
-  },
 });
 
 /** Role-based route destinations */

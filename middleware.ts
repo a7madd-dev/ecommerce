@@ -1,6 +1,11 @@
-import { auth } from "@/lib/auth";
+import NextAuth from "next-auth";
+import { authConfig } from "@/lib/auth.config";
 import { NextResponse } from "next/server";
 import type { UserRole } from "@/types";
+
+// Edge-safe auth instance — built from the config that has NO DB/Node deps, so
+// the middleware bundle never pulls in `pg`/`bcryptjs`.
+const { auth } = NextAuth(authConfig);
 
 const ROLE_ACCESS: Record<string, UserRole[]> = {
   "/admin": ["admin"],

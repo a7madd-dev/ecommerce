@@ -1,18 +1,25 @@
 # Admin Guide
 
-## Supabase Setup
+## Database (PostgreSQL)
 
-1. Create a project at [supabase.com](https://supabase.com)
-2. Go to **Settings > API** and copy:
-   - Project URL → `NEXT_PUBLIC_SUPABASE_URL`
-   - `anon` public key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `service_role` secret key → `SUPABASE_SERVICE_ROLE_KEY`
-3. Run the migration in `supabase/migrations/001_initial_schema.sql` via the **SQL Editor**
+This app runs on a plain PostgreSQL database (it was migrated off Supabase).
+With `docker compose up` a `postgres:16` container is started and the schema +
+seed data load automatically on first boot from:
+
+- `db/00_auth_stub.sql` — compatibility shim so the Supabase-authored migrations run on vanilla Postgres
+- `supabase/migrations/001_initial_schema.sql` and `002_extended_schema.sql` — schema + product seed
+- `db/99_seed_admin.sql` — initial admin user
+
+To point at an external database instead, set `DATABASE_URL` in `.env`:
+
+```bash
+DATABASE_URL=postgresql://user:password@host:5432/dbname
+```
 
 ## Environment Variables
 
 ```bash
-cp .env.example .env.local
+cp .env.example .env
 ```
 
 Generate `AUTH_SECRET`:
@@ -25,7 +32,11 @@ openssl rand -base64 32
 
 ### Admin User
 
-Run in Supabase SQL Editor:
+An admin is seeded automatically on first boot:
+
+> **admin@a7madd.com** / `admin123` — **change this in production!**
+
+To add another admin manually (`psql` or any SQL client):
 
 ```sql
 INSERT INTO users (email, name, password_hash, role)
@@ -37,7 +48,7 @@ VALUES (
 );
 ```
 
-> Default password: `admin123` — change in production!
+> Default password for that hash: `admin123` — change in production!
 
 ### Agent User (can manage orders only)
 
@@ -76,7 +87,6 @@ All roles use the same `/login` page. Middleware routes each role automatically.
 - `app_settings` — global config (fallback image, store name, currency)
 
 ### Safety Features
-- **RLS** enabled on all tables
 - **Atomic stock decrement** via `decrement_stock()` function with `FOR UPDATE` row lock
 - **Updated_at triggers** on products, orders, users, settings
 - **Unique constraint** on order_items (prevents duplicate product per order)
@@ -109,22 +119,11 @@ docker compose up -d --build
 1. SSH into your VPS
 2. Clone the repository
 3. Create `.env` with production values
-4. Set `AUTH_URL=https://ecommerce.o2logic.com`
-5. Set `NEXT_PUBLIC_APP_URL=https://ecommerce.o2logic.com`
+4. Set `AUTH_URL=https://<your-domain>`
+5. Set `NEXT_PUBLIC_APP_URL=https://<your-domain>`
 6. Run `docker compose up -d --build`
-7. Configure reverse proxy (nginx/caddy) to forward 80/443 → 3000
+7. Put the app behind a reverse proxy (Traefik/nginx/caddy) terminating TLS and
+   forwarding 443 → 3000
 
-### Nginx Config
-
-```nginx
-server {
-    server_name ecommerce.o2logic.com;
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
+The live deployment at **ec.a7madd.com** uses the host's shared Traefik proxy;
+see the compose file under `/docker/ec-a7madd` on the server.
